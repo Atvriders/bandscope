@@ -18,7 +18,10 @@ import { BlePanel } from './panels/BlePanel';
 import { NfcPanel } from './panels/NfcPanel';
 import { BtPanel } from './panels/BtPanel';
 import { UwbPanel } from './panels/UwbPanel';
+import type { MapPanel } from './panels/MapPanel'; // lazy-loaded (MapLibre is heavy)
 import { toCsv } from '../export/csv';
+import { SessionRecorder, type Fix } from '../geo/recorder';
+import { PositionProvider } from '../geo/position';
 import type { RfSample } from '../core/model';
 
 const BINS = 720;
@@ -36,10 +39,17 @@ export class App {
   private nfcPanel = new NfcPanel();
   private btPanel = new BtPanel();
   private uwbPanel = new UwbPanel();
+  private recorder = new SessionRecorder();
+  private posProvider = new PositionProvider();
+  private mapPanel: MapPanel | null = null;
+  private mapHost = document.createElement('div');
   private overlay!: HTMLElement;
   private panelEls: Record<string, HTMLElement> = {};
   private tabButtons: Record<string, HTMLButtonElement> = {};
   private lastSamples: RfSample[] = [];
+  private currentFix: Fix | null = null;
+  private mapOpen = false;
+  private lastMapRefresh = 0;
 
   start(): void {
     const app = document.getElementById('app')!;
@@ -61,6 +71,7 @@ export class App {
       ['nfc', 'NFC'],
       ['bt', 'BT'],
       ['uwb', 'UWB'],
+      ['map', 'Map'],
     ] as const) {
       const b = document.createElement('button');
       b.className = 'prov-btn';
@@ -126,6 +137,7 @@ export class App {
       nfc: this.nfcPanel.element,
       bt: this.btPanel.element,
       uwb: this.uwbPanel.element,
+      map: this.mapHost,
     };
     this.overlay.appendChild(close);
     for (const el of Object.values(this.panelEls)) {
@@ -150,9 +162,29 @@ export class App {
       if (this.controller.signal.aborted) return;
       this.wf.resize();
       this.wf.render();
+      if (this.mapOpen && this.mapPanel) {
+        const now = Date.now();
+        if (now - this.lastMapRefresh > 800) {
+          this.mapPanel.refresh();
+          this.lastMapRefresh = now;
+        }
+      }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  }
+
+  private setRecording(on: boolean): void {
+    if (on) {
+      this.recorder.start();
+      void this.posProvider.start((fix) => {
+        this.currentFix = fix;
+        this.recorder.addFix(fix);
+      });
+    } else {
+      this.recorder.stop();
+      void this.posProvider.stop();
+    }
   }
 
   private togglePanel(key: string): void {
@@ -167,11 +199,24 @@ export class App {
       this.tabButtons[k]?.classList.toggle('on', k === key);
     }
     if (key === 'uwb') void this.uwbPanel.probe();
+    this.mapOpen = key === 'map';
+    if (this.mapOpen) void this.openMap();
+  }
+
+  /** Lazily import MapLibre + the map panel only when first needed. */
+  private async openMap(): Promise<void> {
+    if (!this.mapPanel) {
+      const { MapPanel } = await import('./panels/MapPanel');
+      this.mapPanel = new MapPanel(this.recorder, (on) => this.setRecording(on));
+      this.mapHost.appendChild(this.mapPanel.element);
+    }
+    this.mapPanel.open();
   }
 
   private closePanels(): void {
     this.overlay.classList.remove('open');
     for (const b of Object.values(this.tabButtons)) b.classList.remove('on');
+    this.mapOpen = false;
   }
 
   private onEmit(e: Emission): void {
@@ -181,6 +226,7 @@ export class App {
     }
     if (e.kind !== 'markers') return;
     this.lastSamples = e.samples;
+    this.recorder.addSamples(e.samples, this.currentFix);
 
     let bestGnss: number | null = null;
     let servingRsrp: number | null = null;

@@ -17,6 +17,7 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^26.1.1",
     "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
@@ -29,6 +30,7 @@
     "@capacitor/core": "^7.6.7",
     "@capacitor/geolocation": "^7.1.8",
     "gl-matrix": "^3.4.4",
+    "maplibre-gl": "^5.24.0",
     "regl": "^2.1.1"
   },
   "type": "module"

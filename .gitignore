@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+*.local
+.env
+.env.*
+.DS_Store
+
+# Capacitor / Android generated output (scaffold committed; build output ignored)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.keystore
+*.jks

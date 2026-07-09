@@ -1,0 +1,109 @@
+name: build
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ---- web tier: typecheck + unit tests + production build ----
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+
+  # ---- browser/PWA tier: build + push the public GHCR image ----
+  docker-image:
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute lowercase image name
+        id: img
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "image=ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/bandscope" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ steps.img.outputs.image }}:latest
+            ${{ steps.img.outputs.image }}:${{ github.sha }}
+
+  # ---- full-access APK tier: Capacitor + Gradle (debug always; signed if secrets set) ----
+  android-apk:
+    needs: web
+    runs-on: ubuntu-latest
+    env:
+      # Job-level so the signing steps' `if:` can see it (a step's own env is
+      # not in scope for its own `if:`). Empty when the secret is unset.
+      KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bandscope-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      # --- OPTIONAL signed release (runs only if signing secrets are set) ---
+      - name: Decode keystore
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        run: echo "$KEYSTORE_B64" | base64 -d > android/app/bandscope.jks
+      - name: Build signed release APK
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        working-directory: android
+        env:
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          ./gradlew assembleRelease --stacktrace \
+            -Pandroid.injected.signing.store.file="$PWD/app/bandscope.jks" \
+            -Pandroid.injected.signing.store.password="$KEY_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+      - name: Upload signed release APK
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandscope-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk

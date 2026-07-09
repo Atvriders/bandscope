@@ -1,0 +1,153 @@
+:root {
+  --bg: #07090d;
+  --panel: #0f141b;
+  --line: #1e2732;
+  --text: #e6edf3;
+  --muted: #8b97a6;
+  --accent: #4fd1c5;
+  --warn: #f6ad55;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  width: 100vw;
+}
+
+#waterfall {
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #000;
+  touch-action: none;
+}
+
+/* --- app shell --- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-size: 16px;
+}
+.brand::first-letter { color: var(--accent); }
+.prov-btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #172029;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.prov-btn.on { border-color: var(--accent); color: var(--accent); }
+
+.honesty {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 5px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: #0b0f15;
+  border-bottom: 1px solid var(--line);
+}
+.honesty-note b { color: var(--warn); }
+.legend { display: flex; gap: 10px; }
+.legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.sw.measured { background: #4fd1c5; }
+.sw.derived { background: repeating-linear-gradient(45deg, #f6ad55, #f6ad55 2px, #0000 2px, #0000 4px), #7a5a2a; }
+.sw.categorical { background: #b47ff2; }
+
+.axis {
+  display: flex;
+  height: 20px;
+  font-size: 9px;
+  color: var(--muted);
+  background: #0b0f15;
+  border-top: 1px solid var(--line);
+}
+.axis-seg {
+  flex-grow: 1;
+  flex-basis: 0;
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.axis-seg:last-child { border-right: none; }
+
+.gauges {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.gauge { flex: 1 1 0; text-align: center; }
+.gauge svg { width: 100%; max-width: 120px; }
+.gauge-track { fill: none; stroke: #1e2732; stroke-width: 8; stroke-linecap: round; }
+.gauge-value { fill: none; stroke: var(--accent); stroke-width: 8; stroke-linecap: round; }
+.gauge-num { fill: var(--text); font-size: 16px; font-weight: 700; }
+.gauge-unit { fill: var(--muted); font-size: 7px; }
+.gauge-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* --- button group + GNSS overlay/panel --- */
+.btn-group { display: flex; gap: 6px; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 9, 0.94);
+  z-index: 20;
+  overflow: auto;
+  padding: 16px;
+  display: none;
+}
+.overlay.open { display: block; }
+
+.panel { max-width: 520px; margin: 0 auto; }
+.panel h2 { font-size: 13px; font-weight: 700; color: var(--text); margin: 4px 0 12px; }
+
+.skyplot { width: 100%; max-width: 320px; display: block; margin: 0 auto 12px; }
+.sky-ring { fill: none; stroke: #1e2732; stroke-width: 0.6; }
+.sky-ring.outer { stroke: #2b3644; }
+.sky-card { fill: var(--muted); font-size: 8px; text-anchor: middle; }
+
+.cn0-bars { display: flex; flex-direction: column; gap: 4px; }
+.cn0-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.cn0-label { flex: 0 0 66px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cn0-track { flex: 1 1 auto; height: 9px; background: #12181f; border-radius: 3px; overflow: hidden; }
+.cn0-fill { height: 100%; border-radius: 3px; }
+.cn0-num { flex: 0 0 26px; text-align: right; color: var(--muted); }

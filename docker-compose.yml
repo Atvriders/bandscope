@@ -1,0 +1,27 @@
+# BandScope browser/PWA tier. Pulls the CI-built public GHCR image.
+#
+# IMPORTANT: Web NFC / Web Bluetooth / Geolocation only work in a SECURE CONTEXT
+# (HTTPS). Serving on a bare http://LAN-IP silently disables every radio Web API
+# and PWA install. Put TLS in front — Cloudflare Tunnel (below) is the lowest-
+# friction option and matches the existing deployment pattern.
+
+services:
+  bandscope:
+    image: ghcr.io/atvriders/bandscope:latest
+    container_name: bandscope
+    restart: unless-stopped
+    ports:
+      - "8087:80"
+
+  # Uncomment to terminate HTTPS via a named Cloudflare Tunnel (no open ports,
+  # free cert). Create the tunnel + token in the Cloudflare dashboard and route
+  # your hostname to http://bandscope:80.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: bandscope-tunnel
+  #   restart: unless-stopped
+  #   command: tunnel run
+  #   environment:
+  #     - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - bandscope

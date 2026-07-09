@@ -1,0 +1,9 @@
+{
+  "appId": "com.bandscope.app",
+  "appName": "BandScope",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  }
+}

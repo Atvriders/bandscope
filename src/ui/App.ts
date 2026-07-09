@@ -12,6 +12,8 @@ import { type Emission } from '../core/model';
 import { createHonestyBanner } from './HonestyBanner';
 import { Gauge } from './Gauge';
 import { GnssPanel } from './panels/GnssPanel';
+import { WifiPanel } from './panels/WifiPanel';
+import { CellPanel } from './panels/CellPanel';
 
 const BINS = 720;
 const ROWS = 256;
@@ -22,7 +24,11 @@ export class App {
   private controller = new AbortController();
   private gauges: Record<'gnss' | 'cell' | 'wifi', Gauge> = {} as never;
   private gnssPanel = new GnssPanel();
+  private wifiPanel = new WifiPanel();
+  private cellPanel = new CellPanel();
   private overlay!: HTMLElement;
+  private panelEls: Record<string, HTMLElement> = {};
+  private tabButtons: Record<string, HTMLButtonElement> = {};
 
   start(): void {
     const app = document.getElementById('app')!;
@@ -34,13 +40,20 @@ export class App {
     const brand = document.createElement('div');
     brand.className = 'brand';
     brand.textContent = 'BandScope';
-    const gnssBtn = document.createElement('button');
-    gnssBtn.className = 'prov-btn';
-    gnssBtn.textContent = 'GNSS';
-    gnssBtn.onclick = () => {
-      const showing = this.overlay.classList.toggle('open');
-      gnssBtn.classList.toggle('on', showing);
-    };
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'btn-group';
+    for (const [key, label] of [
+      ['gnss', 'GNSS'],
+      ['wifi', 'WiFi'],
+      ['cell', 'Cell'],
+    ] as const) {
+      const b = document.createElement('button');
+      b.className = 'prov-btn';
+      b.textContent = label;
+      b.onclick = () => this.togglePanel(key);
+      this.tabButtons[key] = b;
+      btnGroup.appendChild(b);
+    }
     const provBtn = document.createElement('button');
     provBtn.className = 'prov-btn';
     provBtn.textContent = 'Show provenance';
@@ -51,9 +64,7 @@ export class App {
       provBtn.classList.toggle('on', prov);
       provBtn.textContent = prov ? 'Show signal' : 'Show provenance';
     };
-    const btnGroup = document.createElement('div');
-    btnGroup.className = 'btn-group';
-    btnGroup.append(gnssBtn, provBtn);
+    btnGroup.appendChild(provBtn);
     header.append(brand, btnGroup);
 
     // --- honesty banner ---
@@ -80,10 +91,23 @@ export class App {
     };
     gaugeRow.append(this.gauges.gnss.element, this.gauges.cell.element, this.gauges.wifi.element);
 
-    // --- GNSS detail overlay (toggled by the GNSS button) ---
+    // --- detail overlay with tabbed panels (GNSS / WiFi / Cell) ---
     this.overlay = document.createElement('div');
     this.overlay.className = 'overlay';
-    this.overlay.appendChild(this.gnssPanel.element);
+    const close = document.createElement('button');
+    close.className = 'overlay-close';
+    close.textContent = '✕';
+    close.onclick = () => this.closePanels();
+    this.panelEls = {
+      gnss: this.gnssPanel.element,
+      wifi: this.wifiPanel.element,
+      cell: this.cellPanel.element,
+    };
+    this.overlay.appendChild(close);
+    for (const el of Object.values(this.panelEls)) {
+      el.classList.add('hidden');
+      this.overlay.appendChild(el);
+    }
 
     // assemble around the existing canvas
     app.insertBefore(header, this.canvas);
@@ -107,6 +131,24 @@ export class App {
     requestAnimationFrame(loop);
   }
 
+  private togglePanel(key: string): void {
+    const alreadyOpen = this.overlay.classList.contains('open') && !this.panelEls[key].classList.contains('hidden');
+    if (alreadyOpen) {
+      this.closePanels();
+      return;
+    }
+    this.overlay.classList.add('open');
+    for (const [k, el] of Object.entries(this.panelEls)) {
+      el.classList.toggle('hidden', k !== key);
+      this.tabButtons[k]?.classList.toggle('on', k === key);
+    }
+  }
+
+  private closePanels(): void {
+    this.overlay.classList.remove('open');
+    for (const b of Object.values(this.tabButtons)) b.classList.remove('on');
+  }
+
   private onEmit(e: Emission): void {
     if (e.kind !== 'markers') return;
 
@@ -125,6 +167,8 @@ export class App {
     this.gauges.cell.update(servingRsrp);
     this.gauges.wifi.update(bestWifi);
     this.gnssPanel.update(e.samples);
+    this.wifiPanel.update(e.samples);
+    this.cellPanel.update(e.samples);
   }
 
   stop(): void {

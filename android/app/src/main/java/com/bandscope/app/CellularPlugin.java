@@ -120,7 +120,9 @@ public class CellularPlugin extends Plugin {
             o.put("pci", clean(id.getPci()));
             o.put("powerDbm", ss.getSsRsrp());
             o.put("rsrqDb", numOrNull(ss.getSsRsrq()));
-            o.put("sinrDb", numOrNull(ss.getSsSinr()));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                o.put("sinrDb", numOrNull(ss.getSsSinr())); // getSsSinr is API 30+
+            }
             o.put("mccMnc", mccMnc(id.getMccString(), id.getMncString()));
             return o;
         }

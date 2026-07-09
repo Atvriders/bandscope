@@ -151,3 +151,38 @@ body {
 .cn0-track { flex: 1 1 auto; height: 9px; background: #12181f; border-radius: 3px; overflow: hidden; }
 .cn0-fill { height: 100%; border-radius: 3px; }
 .cn0-num { flex: 0 0 26px; text-align: right; color: var(--muted); }
+
+/* --- tabbed overlay panels --- */
+.overlay-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  font: inherit;
+  color: var(--muted);
+  background: #12181f;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+}
+.panel.hidden { display: none; }
+.panel h3 { font-size: 11px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
+
+/* WiFi AP list */
+.ap-list { display: flex; flex-direction: column; gap: 6px; }
+.ap-row { display: flex; align-items: center; gap: 8px; }
+.ap-col { flex: 1 1 auto; min-width: 0; }
+.ap-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-meta { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-track { flex: 0 0 80px; height: 8px; background: #12181f; border-radius: 3px; overflow: hidden; }
+.ap-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.ap-num { flex: 0 0 30px; text-align: right; font-size: 11px; color: var(--muted); }
+
+/* Cellular */
+.cell-hero { background: #0f141b; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.kv { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #12181f; }
+.kv:last-child { border-bottom: none; }
+.kv .k { color: var(--muted); }
+.cell-sub { }
+.panel-empty { color: var(--muted); font-size: 11px; padding: 10px 0; }

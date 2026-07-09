@@ -116,7 +116,7 @@ public class WifiPlugin extends Plugin {
     }
 
     private int widthToMhz(ScanResult r) {
-        switch (r.getChannelWidth()) {
+        switch (r.channelWidth) { // channelWidth is a public field, not a getter
             case ScanResult.CHANNEL_WIDTH_40MHZ:
                 return 40;
             case ScanResult.CHANNEL_WIDTH_80MHZ:

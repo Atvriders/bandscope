@@ -17,19 +17,25 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* lock the page so dragging on the waterfall never scrolls/bounces it */
+  position: fixed;
+  inset: 0;
+  width: 100%;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.4 ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
 }
 
 #app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
 }
 
 #waterfall {
@@ -46,7 +52,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* clear the system status bar / notch (edge-to-edge on Android 15+/iOS) */
+  padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
+    8px calc(12px + env(safe-area-inset-left, 0px));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
@@ -111,7 +121,7 @@ body {
 .gauges {
   display: flex;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--panel);
   border-top: 1px solid var(--line);
 }
@@ -124,7 +134,7 @@ body {
 .gauge-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
 /* --- button group + GNSS overlay/panel --- */
-.btn-group { display: flex; gap: 6px; }
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .overlay {
   position: fixed;
@@ -132,7 +142,9 @@ body {
   background: rgba(4, 6, 9, 0.94);
   z-index: 20;
   overflow: auto;
-  padding: 16px;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
   display: none;
 }
 .overlay.open { display: block; }

@@ -3,7 +3,7 @@
 // legend, and live gauges. UI is intentionally framework-free (small, portable
 // to the Capacitor WebView unchanged).
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { buildRegistry } from '../sources/registry';
 import { Waterfall } from '../render/waterfall';
 import { rasterize } from '../render/rasterize';
@@ -28,7 +28,7 @@ const BINS = 720;
 const ROWS = 256;
 
 export class App {
-  private wf!: Waterfall;
+  private wf: Waterfall | null = null;
   private canvas!: HTMLCanvasElement;
   private controller = new AbortController();
   private gauges: Record<'gnss' | 'cell' | 'wifi', Gauge> = {} as never;
@@ -86,7 +86,7 @@ export class App {
     let prov = false;
     provBtn.onclick = () => {
       prov = !prov;
-      this.wf.setProvenance(prov);
+      this.wf?.setProvenance(prov);
       provBtn.classList.toggle('on', prov);
       provBtn.textContent = prov ? 'Show signal' : 'Show provenance';
     };
@@ -152,16 +152,20 @@ export class App {
     app.appendChild(gaugeRow);
     app.appendChild(this.overlay);
 
-    // --- renderer + sources (native radios on the APK, mock in the browser) ---
-    this.wf = new Waterfall(this.canvas, BINS, ROWS);
-    for (const src of buildRegistry({ isNative: Capacitor.isNativePlatform() })) {
-      src.stream(this.controller.signal, (e) => this.onEmit(e));
+    // --- renderer (resilient: a WebGL failure must NOT kill the data pipeline) ---
+    try {
+      this.wf = new Waterfall(this.canvas, BINS, ROWS);
+    } catch (err) {
+      console.error('Waterfall/WebGL init failed; continuing without it', err);
     }
+
+    // --- sources: on native, request permissions serially first, then stream ---
+    void this.startSources();
 
     const loop = () => {
       if (this.controller.signal.aborted) return;
-      this.wf.resize();
-      this.wf.render();
+      this.wf?.resize();
+      this.wf?.render();
       if (this.mapOpen && this.mapPanel) {
         const now = Date.now();
         if (now - this.lastMapRefresh > 800) {
@@ -172,6 +176,29 @@ export class App {
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  }
+
+  private async startSources(): Promise<void> {
+    const isNative = Capacitor.isNativePlatform();
+    if (isNative) await this.bootstrapPermissions();
+    for (const src of buildRegistry({ isNative })) {
+      src.stream(this.controller.signal, (e) => this.onEmit(e));
+    }
+  }
+
+  // Request the union of native permissions ONE AT A TIME. Firing all plugins'
+  // requests at once collides — Android shows one dialog at a time and the
+  // losers get auto-denied, which shows up as "no data". Location (Gnss) also
+  // covers WiFi + cellular scans; Bluetooth (Ble) covers BT Classic.
+  private async bootstrapPermissions(): Promise<void> {
+    for (const name of ['Gnss', 'Cellular', 'Ble']) {
+      try {
+        const p = registerPlugin(name) as { requestPermissions?: () => Promise<unknown> };
+        await p.requestPermissions?.();
+      } catch {
+        /* denied / unavailable — that radio's panel will show unavailable */
+      }
+    }
   }
 
   private setRecording(on: boolean): void {
@@ -238,7 +265,7 @@ export class App {
     }
 
     const row = rasterize(e.samples, BINS);
-    this.wf.pushRow(row.values, row.trust);
+    this.wf?.pushRow(row.values, row.trust);
     this.gauges.gnss.update(bestGnss);
     this.gauges.cell.update(servingRsrp);
     this.gauges.wifi.update(bestWifi);

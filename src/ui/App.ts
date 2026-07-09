@@ -15,6 +15,11 @@ import { GnssPanel } from './panels/GnssPanel';
 import { WifiPanel } from './panels/WifiPanel';
 import { CellPanel } from './panels/CellPanel';
 import { BlePanel } from './panels/BlePanel';
+import { NfcPanel } from './panels/NfcPanel';
+import { BtPanel } from './panels/BtPanel';
+import { UwbPanel } from './panels/UwbPanel';
+import { toCsv } from '../export/csv';
+import type { RfSample } from '../core/model';
 
 const BINS = 720;
 const ROWS = 256;
@@ -28,9 +33,13 @@ export class App {
   private wifiPanel = new WifiPanel();
   private cellPanel = new CellPanel();
   private blePanel = new BlePanel();
+  private nfcPanel = new NfcPanel();
+  private btPanel = new BtPanel();
+  private uwbPanel = new UwbPanel();
   private overlay!: HTMLElement;
   private panelEls: Record<string, HTMLElement> = {};
   private tabButtons: Record<string, HTMLButtonElement> = {};
+  private lastSamples: RfSample[] = [];
 
   start(): void {
     const app = document.getElementById('app')!;
@@ -49,6 +58,9 @@ export class App {
       ['wifi', 'WiFi'],
       ['cell', 'Cell'],
       ['ble', 'BLE'],
+      ['nfc', 'NFC'],
+      ['bt', 'BT'],
+      ['uwb', 'UWB'],
     ] as const) {
       const b = document.createElement('button');
       b.className = 'prov-btn';
@@ -68,6 +80,11 @@ export class App {
       provBtn.textContent = prov ? 'Show signal' : 'Show provenance';
     };
     btnGroup.appendChild(provBtn);
+    const exportBtn = document.createElement('button');
+    exportBtn.className = 'prov-btn';
+    exportBtn.textContent = '⤓ CSV';
+    exportBtn.onclick = () => this.exportCsv();
+    btnGroup.appendChild(exportBtn);
     header.append(brand, btnGroup);
 
     // --- honesty banner ---
@@ -106,6 +123,9 @@ export class App {
       wifi: this.wifiPanel.element,
       cell: this.cellPanel.element,
       ble: this.blePanel.element,
+      nfc: this.nfcPanel.element,
+      bt: this.btPanel.element,
+      uwb: this.uwbPanel.element,
     };
     this.overlay.appendChild(close);
     for (const el of Object.values(this.panelEls)) {
@@ -146,6 +166,7 @@ export class App {
       el.classList.toggle('hidden', k !== key);
       this.tabButtons[k]?.classList.toggle('on', k === key);
     }
+    if (key === 'uwb') void this.uwbPanel.probe();
   }
 
   private closePanels(): void {
@@ -154,7 +175,12 @@ export class App {
   }
 
   private onEmit(e: Emission): void {
+    if (e.kind === 'event') {
+      if (e.radio === 'nfc') this.nfcPanel.addTap(e);
+      return;
+    }
     if (e.kind !== 'markers') return;
+    this.lastSamples = e.samples;
 
     let bestGnss: number | null = null;
     let servingRsrp: number | null = null;
@@ -174,6 +200,18 @@ export class App {
     this.wifiPanel.update(e.samples);
     this.cellPanel.update(e.samples);
     this.blePanel.update(e.samples);
+    this.btPanel.update(e.samples);
+  }
+
+  private exportCsv(): void {
+    const csv = toCsv(this.lastSamples);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bandscope-snapshot.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   stop(): void {

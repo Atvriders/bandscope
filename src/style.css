@@ -186,3 +186,12 @@ body {
 .kv .k { color: var(--muted); }
 .cell-sub { }
 .panel-empty { color: var(--muted); font-size: 11px; padding: 10px 0; }
+
+/* NFC tap log + UWB */
+.nfc-log { display: flex; flex-direction: column; gap: 6px; }
+.nfc-tap { background: #0f141b; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.nfc-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.nfc-uid { color: var(--accent); font-weight: 600; word-break: break-all; }
+.nfc-tech { color: var(--muted); }
+.nfc-rec { font-size: 11px; color: var(--text); margin-top: 3px; word-break: break-word; }
+.uwb-status { font-size: 13px; color: var(--text); padding: 8px 0; }

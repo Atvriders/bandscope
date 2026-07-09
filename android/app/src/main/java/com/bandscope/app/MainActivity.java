@@ -14,6 +14,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WifiPlugin.class);
         registerPlugin(CellularPlugin.class);
         registerPlugin(BlePlugin.class);
+        registerPlugin(NfcPlugin.class);
+        registerPlugin(BtClassicPlugin.class);
+        registerPlugin(UwbPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

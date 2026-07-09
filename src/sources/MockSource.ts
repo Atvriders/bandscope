@@ -58,6 +58,12 @@ const BLE_DEVS: BleDesc[] = [
   { addr: 'F4:55:66:77:88:04', name: 'SmartTag', base: -66, tx: -8 },
 ];
 
+interface BtDesc { addr: string; name: string; base: number; }
+const BT_DEVS: BtDesc[] = [
+  { addr: '11:22:33:AA:BB:01', name: 'Car Audio', base: -74 },
+  { addr: '11:22:33:AA:BB:02', name: 'Speaker', base: -81 },
+];
+
 export class MockSource implements RadioSource {
   readonly id = 'gnss' as const; // representative id; emits multiple radios
   private rnd: () => number;
@@ -141,6 +147,23 @@ export class MockSource implements RadioSource {
         identity: `LTE-${c.pci}`,
         channel: `EARFCN ${c.earfcn}`,
         extras: { pci: c.pci, serving: c.serving, rat: 'LTE' },
+      });
+    }
+
+    for (const bt of BT_DEVS) {
+      samples.push({
+        source: 'bt_classic',
+        tsMs: nowMs,
+        measuredAtMs: nowMs,
+        centerFreqHz: null,
+        bandwidthHz: null,
+        value: bt.base + jitter(4),
+        unit: Unit.DBM,
+        snrDb: null,
+        trustClass: TrustClass.MEASURED,
+        identity: bt.addr,
+        channel: null,
+        extras: { name: bt.name, cls: 0, rssiReported: true },
       });
     }
 

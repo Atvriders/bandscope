@@ -182,9 +182,6 @@ body {
   gap: 7px;
   margin-bottom: 8px;
 }
-.tile.expandable .tile-head {
-  cursor: pointer;
-}
 .lamp {
   width: 8px;
   height: 8px;
@@ -292,51 +289,156 @@ body {
   background: var(--categorical);
 }
 
-/* expandable device list */
-.tile-list {
-  display: none;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-}
-.tile.expanded .tile-list {
-  display: flex;
-}
-.drow {
+/* tile footer affordance — "N APs ›" opens the detail sheet */
+.tile-more {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 4px 2px;
+  border: none;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  min-height: 32px;
 }
-.drow-col {
+.tile-more[data-trust="measured"] {
+  color: var(--measured);
+}
+.tile-more[data-trust="derived"] {
+  color: var(--derived);
+}
+.tile-more[data-trust="categorical"] {
+  color: var(--categorical);
+}
+.tile-more-chevron {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* --- per-radio detail sheet (full-screen, reuses .overlay) --- */
+.overlay.detail-sheet {
+  padding: 0;
+}
+.detail-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+}
+.detail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 46px 2px
+    calc(14px + env(safe-area-inset-left, 0px));
+}
+.detail-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+.detail-sheet[data-trust="measured"] .detail-title {
+  color: var(--measured);
+}
+.detail-sheet[data-trust="derived"] .detail-title {
+  color: var(--derived);
+}
+.detail-sheet[data-trust="categorical"] .detail-title {
+  color: var(--categorical);
+}
+.detail-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.detail-sub {
+  padding: 0 14px 4px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.detail-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 2px 14px 0;
+}
+.sort-btn {
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  background: #121a22;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.sort-btn.on {
+  color: var(--text);
+  border-color: var(--measured);
+}
+.detail-sheet .overlay-close {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  float: none;
+  z-index: 5;
+}
+.detail-list {
+  padding: 4px 0 calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.drow4 {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px calc(14px + env(safe-area-inset-right, 0px)) 9px
+    calc(14px + env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid #12181f;
+}
+.drow4-main {
   flex: 1 1 auto;
   min-width: 0;
 }
-.drow-name {
-  display: block;
-  font-size: 11px;
+.drow4-primary {
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.drow-sub {
-  display: block;
-  font-size: 9px;
+.drow4-line {
+  font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.drow .bar {
-  flex: 0 0 64px;
+.drow4-line:empty {
+  display: none;
 }
-.drow-val {
-  flex: 0 0 30px;
-  text-align: right;
-  font-size: 11px;
-  color: var(--muted);
+.drow4-right {
+  flex: 0 0 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.drow4-val {
+  font-size: 18px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.drow4-right .bar {
+  width: 60px;
 }
 
 /* NFC log */

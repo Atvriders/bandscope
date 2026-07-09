@@ -14,6 +14,8 @@ import type { Emission, RfSample } from '../core/model';
 import { createHonestyBanner } from './HonestyBanner';
 import { el } from './dash/parts';
 import { radioTile, nfcTile, uwbTile, type Tile } from './dash/tiles';
+import { DetailSheet, DETAIL_CONFIGS } from './dash/detail';
+import type { RadioId } from '../core/model';
 import { toCsv } from '../export/csv';
 import { SessionRecorder, type Fix } from '../geo/recorder';
 import { PositionProvider } from '../geo/position';
@@ -26,7 +28,6 @@ const TICK_MS = 200; // ~5 Hz: one combined strip row + tile refresh per tick
 const strongest = (items: RfSample[]): RfSample | null =>
   items.length ? items.reduce((b, s) => (s.value > b.value ? s : b), items[0]) : null;
 
-const nameOf = (s: RfSample): string => String(s.extras.name || s.identity);
 const mhz = (s: RfSample): string => (s.centerFreqHz ? `${Math.round(s.centerFreqHz / 1e6)} MHz` : '');
 
 function cellMeta(items: RfSample[]): string {
@@ -46,6 +47,8 @@ export class App {
   private controller = new AbortController();
   private tiles: Tile[] = [];
   private lastTick = 0;
+  private sheet!: DetailSheet;
+  private detailOpen = false;
 
   // wardriving map kept as a separate full-screen tool
   private recorder = new SessionRecorder();
@@ -94,10 +97,16 @@ export class App {
 
     // --- map overlay (lazy) ---
     const mapClose = el('button', 'overlay-close', '✕');
-    mapClose.onclick = () => this.closeMap();
+    mapClose.onclick = () => this.closeOverlay();
     this.mapHost.appendChild(mapClose);
 
-    app.replaceChildren(header, banner, strip, grid, this.mapHost);
+    // --- per-radio detail sheet (tap a tile's footer to open) ---
+    this.sheet = new DetailSheet(() => this.closeOverlay());
+
+    app.replaceChildren(header, banner, strip, grid, this.mapHost, this.sheet.element);
+
+    // hardware/gesture back closes an open overlay instead of leaving the app
+    window.addEventListener('popstate', () => this.onPopState());
 
     // --- renderer: GL, falling back to 2D so the strip is never blank ---
     try {
@@ -141,55 +150,41 @@ export class App {
   }
 
   private buildTiles(): Tile[] {
+    const onOpen = (id: RadioId) => this.openDetail(id);
     return [
       radioTile({
-        id: 'gnss', label: 'GNSS', unit: 'dB-Hz', trust: 'measured', full: true,
+        id: 'gnss', label: 'GNSS', unit: 'dB-Hz', trust: 'measured', full: true, noun: 'sats', onOpen,
         hero: strongest,
         meta: (items) =>
           items.length
-            ? `${items.length} sats · ${items.filter((s) => s.extras.usedInFix).length} in fix · ${[...new Set(items.map((s) => String(s.extras.constellation ?? '')))].filter(Boolean).join(' ')}`
+            ? `${items.filter((s) => s.extras.usedInFix).length} in fix · ${[...new Set(items.map((s) => String(s.extras.constellation ?? '')))].filter(Boolean).join(' ')}`
             : 'acquiring satellites…',
-        rowLabel: (s) => String(s.channel ?? s.identity),
-        rowSub: (s) => `${String(s.extras.constellation ?? '')} ${String(s.extras.band ?? '')}`.trim(),
-        rowSort: (a, b) => b.value - a.value,
       }),
       radioTile({
-        id: 'cellular', label: 'CELL', unit: 'dBm', trust: 'derived', full: true,
+        id: 'cellular', label: 'CELL', unit: 'dBm', trust: 'derived', full: true, noun: 'cells', onOpen,
         hero: (items) => items.find((s) => s.extras.serving) ?? strongest(items),
         meta: cellMeta,
-        rowLabel: (s) => `${String(s.extras.rat ?? '')} ${String(s.channel ?? '')}`.trim(),
-        rowSub: (s) => mhz(s),
-        rowSort: (a, b) => (b.extras.serving ? 1 : 0) - (a.extras.serving ? 1 : 0) || b.value - a.value,
       }),
       radioTile({
-        id: 'wifi', label: 'WIFI', unit: 'dBm', trust: 'measured', full: true,
+        id: 'wifi', label: 'WIFI', unit: 'dBm', trust: 'measured', full: true, noun: 'APs', onOpen,
         hero: strongest,
         meta: (items) => {
           if (!items.length) return 'scanning…';
           const t = strongest(items)!;
-          return `${String(t.extras.ssid || '(hidden)')} · ch ${String(t.channel ?? '')} · ${mhz(t)} · ${items.length} APs`;
+          return `${String(t.extras.ssid || '(hidden)')} · ch ${String(t.channel ?? '')} · ${mhz(t)}`;
         },
-        rowLabel: (s) => String(s.extras.ssid || '(hidden)'),
-        rowSub: (s) => `ch ${String(s.channel ?? '')} · ${mhz(s)}`,
-        rowSort: (a, b) => b.value - a.value,
       }),
       radioTile({
-        id: 'ble', label: 'BLE', unit: 'dBm', trust: 'measured', full: false,
+        id: 'ble', label: 'BLE', unit: 'dBm', trust: 'measured', full: false, noun: 'devices', onOpen,
         hero: strongest,
-        meta: (items) => (items.length ? `${items.length} near · 2.4 GHz, no channel` : 'scanning…'),
-        rowLabel: nameOf,
-        rowSub: (s) => s.identity,
-        rowSort: (a, b) => b.value - a.value,
+        meta: (items) => (items.length ? '2.4 GHz · no channel' : 'scanning…'),
       }),
       radioTile({
-        id: 'bt_classic', label: 'BT', unit: 'dBm', trust: 'measured', full: false,
+        id: 'bt_classic', label: 'BT', unit: 'dBm', trust: 'measured', full: false, noun: 'devices', onOpen,
         hero: strongest,
-        meta: (items) => (items.length ? `${items.length} found · no freq` : 'discovery…'),
-        rowLabel: nameOf,
-        rowSub: (s) => s.identity,
-        rowSort: (a, b) => b.value - a.value,
+        meta: (items) => (items.length ? 'discovery · no freq' : 'discovery…'),
       }),
-      nfcTile(),
+      nfcTile(onOpen),
       uwbTile(),
     ];
   }
@@ -200,6 +195,7 @@ export class App {
     this.wf?.pushRow(row.values, row.trust);
     const ctx = { snapshot, events: this.store.recentEvents(), now };
     for (const t of this.tiles) t.update(ctx);
+    if (this.detailOpen) this.sheet.update(ctx);
   }
 
   private async startSources(): Promise<void> {
@@ -239,8 +235,27 @@ export class App {
     URL.revokeObjectURL(url);
   }
 
+  // --- per-radio detail sheet ---
+  private openDetail(id: RadioId): void {
+    if (this.detailOpen) return;
+    const cfg = DETAIL_CONFIGS[id];
+    if (!cfg) return;
+    this.sheet.bind(cfg);
+    // open populated immediately, not on the next tick
+    this.sheet.update({
+      snapshot: this.store.snapshot(Date.now()),
+      events: this.store.recentEvents(),
+      now: Date.now(),
+    });
+    this.sheet.element.classList.add('open');
+    this.detailOpen = true;
+    history.pushState({ bs: 'detail' }, '');
+  }
+
   // --- wardriving map (separate full-screen tool) ---
   private async openMap(): Promise<void> {
+    if (this.mapOpen) return; // re-entrancy guard spanning the lazy-import gap
+    this.mapOpen = true; // latch BEFORE the await so a second tap returns early
     try {
       // Memoize the (lazy) build so a double-tap can't create two MapPanels.
       if (!this.mapPanelPromise) {
@@ -254,17 +269,30 @@ export class App {
       }
       const panel = await this.mapPanelPromise;
       this.mapHost.classList.add('open');
-      this.mapOpen = true;
+      history.pushState({ bs: 'map' }, ''); // exactly once per open
       panel.open();
     } catch (err) {
       this.mapPanelPromise = null; // allow retry after a failed load
+      this.mapOpen = false;
       console.error('Map failed to open', err);
     }
   }
 
-  private closeMap(): void {
-    this.mapHost.classList.remove('open');
-    this.mapOpen = false;
+  /** A close button was tapped — pop history so the back stack stays balanced. */
+  private closeOverlay(): void {
+    if (this.detailOpen || this.mapOpen) history.back();
+  }
+
+  /** Back navigation (button or gesture) closes exactly ONE overlay — the
+   *  topmost (last-pushed) — so each pushState is balanced by one pop. */
+  private onPopState(): void {
+    if (this.mapOpen) {
+      this.mapHost.classList.remove('open');
+      this.mapOpen = false;
+    } else if (this.detailOpen) {
+      this.sheet.element.classList.remove('open');
+      this.detailOpen = false;
+    }
   }
 
   private setRecording(on: boolean): void {

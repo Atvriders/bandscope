@@ -19,67 +19,42 @@ function wifi(bssid: string, val: number, ssid = 'Net'): RfSample {
   };
 }
 
-function mkTile() {
+const strongest = (items: RfSample[]) =>
+  items.length ? items.reduce((b, s) => (s.value > b.value ? s : b), items[0]) : null;
+
+function mkTile(onOpen: (id: string) => void = () => {}) {
   return radioTile({
-    id: 'wifi',
-    label: 'WIFI',
-    unit: 'dBm',
-    trust: 'measured',
-    full: true,
-    hero: (items) => (items.length ? items[0] : null),
-    meta: (items) => `${items.length} APs`,
-    rowLabel: (s) => String(s.extras.ssid),
-    rowSub: (s) => s.identity,
-    rowSort: (a, b) => b.value - a.value,
+    id: 'wifi', label: 'WIFI', unit: 'dBm', trust: 'measured', full: true, noun: 'APs',
+    onOpen: onOpen as never,
+    hero: strongest,
+    meta: (items) => `${items.length} live`,
   });
 }
 
-describe('radioTile — glanceable + non-flashing', () => {
-  test('renders hero readout + keyed list from a snapshot', () => {
+describe('radioTile', () => {
+  test('shows the hero readout and a live footer count', () => {
     const tile = mkTile();
     document.body.appendChild(tile.element);
     tile.update({ snapshot: [wifi('aa', -50), wifi('bb', -70)], events: [], now: 1000 });
     expect(tile.element.querySelector('.readout-num')!.textContent).toBe('-50');
-    expect(tile.element.querySelector('.readout')!.getAttribute('data-trust')).toBe('measured');
-    expect(tile.element.querySelectorAll('.drow')).toHaveLength(2);
-    expect(tile.element.querySelector('.tile-meta')!.textContent).toBe('2 APs');
+    expect(tile.element.querySelector('.tile-more')!.textContent).toContain('2 APs');
   });
 
-  test('updates IN PLACE — same DOM nodes reused, not rebuilt (anti-flash)', () => {
-    const tile = mkTile();
+  test('the footer opens the detail sheet for this radio', () => {
+    let opened = '';
+    const tile = mkTile((id) => (opened = id));
     document.body.appendChild(tile.element);
-    tile.update({ snapshot: [wifi('aa', -50), wifi('bb', -70)], events: [], now: 1000 });
-    const firstRow = tile.element.querySelectorAll('.drow')[0];
-    const heroNum = tile.element.querySelector('.readout-num')!;
-
-    // second update: same identities, changed values
-    tile.update({ snapshot: [wifi('aa', -42), wifi('bb', -71)], events: [], now: 1200 });
-
-    // the row element and hero node are the SAME objects — mutated, not recreated
-    expect(tile.element.querySelectorAll('.drow')[0]).toBe(firstRow);
-    expect(tile.element.querySelector('.readout-num')!).toBe(heroNum);
-    expect(heroNum.textContent).toBe('-42');
+    (tile.element.querySelector('.tile-more') as HTMLButtonElement).click();
+    expect(opened).toBe('wifi');
   });
 
-  test('a departing device stays at its rank during grace (does not jump to top)', () => {
-    const tile = mkTile();
-    document.body.appendChild(tile.element);
-    tile.update({ snapshot: [wifi('aa', -50), wifi('bb', -70), wifi('cc', -90)], events: [], now: 1000 });
-    let names = [...tile.element.querySelectorAll('.drow-name')].map((n) => n.textContent);
-    expect(names).toEqual(['Net', 'Net', 'Net']); // 3 rows, aa/bb/cc order (strongest first)
-    // weakest (cc) departs; it must NOT jump to the top — order stays aa,bb,cc
-    tile.update({ snapshot: [wifi('aa', -48), wifi('bb', -71)], events: [], now: 1100 });
-    const rows = [...tile.element.querySelectorAll('.drow-sub')].map((n) => n.textContent);
-    expect(rows).toEqual(['aa', 'bb', 'cc']); // cc held in place at the bottom
-  });
-
-  test('an empty snapshot for this radio does not blow away rows immediately (grace window)', () => {
+  test('hero updates in place — same node reused (anti-flash)', () => {
     const tile = mkTile();
     document.body.appendChild(tile.element);
     tile.update({ snapshot: [wifi('aa', -50)], events: [], now: 1000 });
-    // a few ticks with no wifi (e.g. only BLE emitted) — row must persist via grace
-    tile.update({ snapshot: [], events: [], now: 1100 });
-    tile.update({ snapshot: [], events: [], now: 1200 });
-    expect(tile.element.querySelectorAll('.drow')).toHaveLength(1);
+    const heroNum = tile.element.querySelector('.readout-num')!;
+    tile.update({ snapshot: [wifi('aa', -42)], events: [], now: 1100 });
+    expect(tile.element.querySelector('.readout-num')!).toBe(heroNum);
+    expect(heroNum.textContent).toBe('-42');
   });
 });

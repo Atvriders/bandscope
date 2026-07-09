@@ -20,17 +20,20 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-interface ApDesc { ssid: string; bssid: string; freqMhz: number; widthMhz: number; base: number; ch: string; }
+interface ApDesc { ssid: string; bssid: string; freqMhz: number; widthMhz: number; base: number; ch: string; cap: string; }
 interface SatDesc { svid: number; constellation: string; carrierHz: number; base: number; az: number; el: number; }
-interface CellDesc { earfcn: number; pci: number; base: number; serving: boolean; }
+interface CellDesc { earfcn: number; pci: number; base: number; serving: boolean; band: number; }
 
+const WPA2 = '[WPA2-PSK-CCMP][ESS]';
+const WPA3 = '[RSN-SAE-CCMP][ESS]';
+const OPEN = '[ESS]';
 const APS: ApDesc[] = [
-  { ssid: 'HomeNet', bssid: 'a0:11:22:33:44:01', freqMhz: 2412, widthMhz: 20, base: -47, ch: '1' },
-  { ssid: 'HomeNet-5G', bssid: 'a0:11:22:33:44:02', freqMhz: 5180, widthMhz: 80, base: -55, ch: '36' },
-  { ssid: 'Neighbor_2G', bssid: 'b4:aa:bb:cc:dd:03', freqMhz: 2437, widthMhz: 20, base: -71, ch: '6' },
-  { ssid: 'CoffeeShop', bssid: 'c8:99:88:77:66:04', freqMhz: 2462, widthMhz: 20, base: -78, ch: '11' },
-  { ssid: 'Office-5G', bssid: 'd0:55:44:33:22:05', freqMhz: 5765, widthMhz: 40, base: -62, ch: '153' },
-  { ssid: 'MeshAP-6E', bssid: 'e0:66:77:88:99:06', freqMhz: 5955, widthMhz: 80, base: -58, ch: '1(6E)' },
+  { ssid: 'HomeNet', bssid: 'a0:11:22:33:44:01', freqMhz: 2412, widthMhz: 20, base: -47, ch: '1', cap: WPA2 },
+  { ssid: 'HomeNet-5G', bssid: 'a0:11:22:33:44:02', freqMhz: 5180, widthMhz: 80, base: -55, ch: '36', cap: WPA2 },
+  { ssid: 'Neighbor_2G', bssid: 'b4:aa:bb:cc:dd:03', freqMhz: 2437, widthMhz: 20, base: -71, ch: '6', cap: WPA2 },
+  { ssid: 'CoffeeShop', bssid: 'c8:99:88:77:66:04', freqMhz: 2462, widthMhz: 20, base: -78, ch: '11', cap: OPEN },
+  { ssid: 'Office-5G', bssid: 'd0:55:44:33:22:05', freqMhz: 5765, widthMhz: 40, base: -62, ch: '153', cap: WPA3 },
+  { ssid: 'MeshAP-6E', bssid: 'e0:66:77:88:99:06', freqMhz: 5955, widthMhz: 80, base: -58, ch: '1(6E)', cap: WPA3 },
 ];
 
 const SATS: SatDesc[] = [
@@ -45,9 +48,9 @@ const SATS: SatDesc[] = [
 ];
 
 const CELLS: CellDesc[] = [
-  { earfcn: 1575, pci: 201, base: -84, serving: true }, // band 3 ~1842.5 MHz
-  { earfcn: 6300, pci: 88, base: -98, serving: false }, // band 20 ~806 MHz
-  { earfcn: 2400, pci: 305, base: -102, serving: false }, // band 5 ~869 MHz
+  { earfcn: 1575, pci: 201, base: -84, serving: true, band: 3 }, // ~1842.5 MHz
+  { earfcn: 6300, pci: 88, base: -98, serving: false, band: 20 }, // ~806 MHz
+  { earfcn: 2400, pci: 305, base: -102, serving: false, band: 5 }, // ~869 MHz
 ];
 
 interface BleDesc { addr: string; name: string; base: number; tx: number | null; }
@@ -105,7 +108,7 @@ export class MockSource implements RadioSource {
         trustClass: TrustClass.MEASURED,
         identity: ap.bssid,
         channel: ap.ch,
-        extras: { ssid: ap.ssid },
+        extras: { ssid: ap.ssid, capabilities: ap.cap },
       });
     }
 
@@ -146,7 +149,14 @@ export class MockSource implements RadioSource {
         trustClass: TrustClass.DERIVED, // frequency reconstructed from EARFCN
         identity: `LTE-${c.earfcn}-${c.pci}`,
         channel: `EARFCN ${c.earfcn}`,
-        extras: { pci: c.pci, serving: c.serving, rat: 'LTE' },
+        extras: {
+          pci: c.pci,
+          serving: c.serving,
+          rat: 'LTE',
+          band: c.band,
+          rsrq: -9 - Math.round(jitter(2)),
+          mccMnc: '310260',
+        },
       });
     }
 

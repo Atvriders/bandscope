@@ -1,13 +1,13 @@
-// Radio tiles. Every tile builds its DOM once and mutates in place from a
-// throttled snapshot — no rebuilds, no flashing. MEASURED/DERIVED tiles show a
-// recessed hero readout + strength bar + optional keyed device list; CATEGORICAL
-// tiles (NFC/UWB) show status only and NEVER a strength bar (the layout refuses
-// to fake a level).
+// Radio tiles. Each builds its DOM once and mutates in place from a throttled
+// snapshot — no rebuilds, no flashing. MEASURED/DERIVED tiles show a recessed
+// hero readout + strength bar + a one-line summary + a "N devices ›" footer that
+// opens the full detail sheet. CATEGORICAL tiles (NFC/UWB) show status only and
+// NEVER a strength bar (the layout refuses to fake a level).
 
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { normalize01 } from '../../core/normalize';
 import type { EventEmission, RadioId, RfSample } from '../../core/model';
-import { el, Readout, Bar, KeyedList, type Row } from './parts';
+import { el, Readout, Bar } from './parts';
 
 export interface TileCtx {
   snapshot: RfSample[];
@@ -25,14 +25,28 @@ export interface RadioTileCfg {
   unit: string;
   trust: 'measured' | 'derived' | 'categorical';
   full: boolean;
-  /** which sample drives the hero readout (strongest / serving) */
+  noun: string;
   hero: (items: RfSample[]) => RfSample | null;
-  /** one-line summary under the hero */
   meta: (items: RfSample[]) => string;
-  /** if set, the tile has an expandable keyed device list */
-  rowLabel?: (s: RfSample) => string;
-  rowSub?: (s: RfSample) => string;
-  rowSort?: (a: RfSample, b: RfSample) => number;
+  onOpen: (id: RadioId) => void;
+}
+
+function moreButton(trust: string, onClick: () => void): { el: HTMLButtonElement; set(n: number, noun: string): void } {
+  const btn = el('button', 'tile-more');
+  btn.dataset.trust = trust;
+  const label = document.createTextNode('');
+  const chevron = el('span', 'tile-more-chevron', '›');
+  btn.append(label, chevron);
+  btn.onclick = onClick;
+  let last = -1;
+  return {
+    el: btn,
+    set(n, noun) {
+      if (n === last) return;
+      last = n;
+      label.nodeValue = n > 0 ? `${n} ${noun} ` : `no ${noun} yet `;
+    },
+  };
 }
 
 export function radioTile(cfg: RadioTileCfg): Tile {
@@ -48,20 +62,14 @@ export function radioTile(cfg: RadioTileCfg): Tile {
   const readout = new Readout(cfg.unit);
   const bar = new Bar();
   const meta = el('div', 'tile-meta', '—');
+  const col = el('div', 'tile-col');
+  col.append(meta, bar.el);
   const body = el('div', 'tile-body');
-  body.append(readout.el, el('div', 'tile-col', ''));
-  body.children[1].append(meta, bar.el);
+  body.append(readout.el, col);
 
-  const listWrap = el('div', 'tile-list');
-  const keyed = cfg.rowLabel
-    ? new KeyedList(listWrap, (s) => `${s.source}|${s.identity}`, () => deviceRow(cfg))
-    : null;
+  const more = moreButton(cfg.trust, () => cfg.onOpen(cfg.id));
 
-  root.append(head, body, listWrap);
-  if (keyed) {
-    root.classList.add('expandable');
-    head.onclick = () => root.classList.toggle('expanded');
-  }
+  root.append(head, body, more.el);
 
   let lastAge = '';
   let lastMeta = '';
@@ -75,10 +83,7 @@ export function radioTile(cfg: RadioTileCfg): Tile {
       bar.set(hero ? normalize01(cfg.id, hero.value) : 0, cfg.trust);
 
       const m = cfg.meta(items);
-      if (m !== lastMeta) {
-        meta.textContent = m;
-        lastMeta = m;
-      }
+      if (m !== lastMeta) { meta.textContent = m; lastMeta = m; }
 
       let ageStr = '';
       if (items.length) {
@@ -86,52 +91,15 @@ export function radioTile(cfg: RadioTileCfg): Tile {
         const secs = Math.max(0, Math.round((now - fresh) / 1000));
         ageStr = secs < 1 ? 'live' : `${secs}s`;
       }
-      if (ageStr !== lastAge) {
-        age.textContent = ageStr;
-        lastAge = ageStr;
-      }
+      if (ageStr !== lastAge) { age.textContent = ageStr; lastAge = ageStr; }
 
-      if (keyed) {
-        const sorted = cfg.rowSort ? [...items].sort(cfg.rowSort) : items;
-        keyed.update(sorted);
-      }
+      more.set(items.length, cfg.noun);
     },
   };
 }
 
-function deviceRow(cfg: RadioTileCfg): Row {
-  const rowEl = el('div', 'drow');
-  const nameNode = document.createTextNode('');
-  const subNode = document.createTextNode('');
-  const valNode = document.createTextNode('');
-  const name = el('span', 'drow-name');
-  name.appendChild(nameNode);
-  const sub = el('span', 'drow-sub');
-  sub.appendChild(subNode);
-  const col = el('div', 'drow-col');
-  col.append(name, sub);
-  const rbar = new Bar();
-  const val = el('span', 'drow-val');
-  val.appendChild(valNode);
-  rowEl.append(col, rbar.el, val);
-
-  let ln = '', ls = '', lv = '';
-  return {
-    el: rowEl,
-    update(s) {
-      const nm = cfg.rowLabel!(s);
-      if (nm !== ln) { nameNode.nodeValue = nm; ln = nm; }
-      const sb = cfg.rowSub ? cfg.rowSub(s) : '';
-      if (sb !== ls) { subNode.nodeValue = sb; ls = sb; }
-      rbar.set(normalize01(s.source, s.value), s.trustClass);
-      const vv = s.value.toFixed(0);
-      if (vv !== lv) { valNode.nodeValue = vv; lv = vv; }
-    },
-  };
-}
-
-// --- NFC: categorical event log, no level ---
-export function nfcTile(): Tile {
+// --- NFC: categorical event log; footer opens the tap history sheet ---
+export function nfcTile(onOpen: (id: RadioId) => void): Tile {
   const root = el('section', 'tile half');
   root.dataset.trust = 'categorical';
   const head = el('div', 'tile-head');
@@ -139,36 +107,26 @@ export function nfcTile(): Tile {
   lamp.dataset.trust = 'categorical';
   head.append(lamp, el('span', 'tile-label', 'NFC'), el('span', 'tile-unit', '13.56 MHz'));
   const status = el('div', 'tile-meta', 'No taps yet — tap a tag');
-  const log = el('div', 'nfc-log');
-  root.append(head, status, log);
+  const more = moreButton('categorical', () => onOpen('nfc'));
+  root.append(head, status, more.el);
 
-  let lastTop = -1;
   let lastStatus = '';
   return {
     element: root,
     update({ events, now }) {
       const taps = events.filter((e) => e.radio === 'nfc');
-      if (!taps.length) return;
-      const latest = taps[0];
-      const secs = Math.max(0, Math.round((now - latest.tsMs) / 1000));
-      const st = `${taps.length} tap${taps.length > 1 ? 's' : ''} · last ${secs}s ago`;
-      if (st !== lastStatus) { status.textContent = st; lastStatus = st; }
-      if (latest.tsMs !== lastTop) {
-        lastTop = latest.tsMs;
-        log.replaceChildren(); // rebuild only on a genuine new tap (rare, user-driven)
-        for (const t of taps.slice(0, 5)) {
-          const line = el('div', 'nfc-line');
-          const uid = String((t.payload as { uid?: string }).uid ?? '');
-          const techs = ((t.payload as { techList?: string[] }).techList ?? []).join(', ');
-          line.textContent = `${uid}${techs ? ' · ' + techs : ''}`;
-          log.appendChild(line);
-        }
+      let st = 'No taps yet — tap a tag';
+      if (taps.length) {
+        const secs = Math.max(0, Math.round((now - taps[0].tsMs) / 1000));
+        st = `${taps.length} tap${taps.length > 1 ? 's' : ''} · last ${secs}s ago`;
       }
+      if (st !== lastStatus) { status.textContent = st; lastStatus = st; }
+      more.set(taps.length, 'taps');
     },
   };
 }
 
-// --- UWB: categorical presence, no scan ---
+// --- UWB: categorical presence, no list ---
 interface UwbApi {
   getStatus(): Promise<{ present: boolean }>;
 }

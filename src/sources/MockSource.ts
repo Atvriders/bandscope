@@ -144,7 +144,7 @@ export class MockSource implements RadioSource {
         unit: Unit.DBM,
         snrDb: c.serving ? 12 + jitter(3) : null,
         trustClass: TrustClass.DERIVED, // frequency reconstructed from EARFCN
-        identity: `LTE-${c.pci}`,
+        identity: `LTE-${c.earfcn}-${c.pci}`,
         channel: `EARFCN ${c.earfcn}`,
         extras: { pci: c.pci, serving: c.serving, rat: 'LTE' },
       });

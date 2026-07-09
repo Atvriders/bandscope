@@ -49,7 +49,8 @@ export function mapCells(cells: CellInfo[], nowMs: number): RfSample[] {
       unit: Unit.DBM,
       snrDb: c.sinrDb ?? null,
       trustClass: TrustClass.DERIVED, // frequency reconstructed from ARFCN
-      identity: `${c.rat}-${c.pci ?? '?'}`,
+      // include ARFCN so same-PCI cells on different frequencies don't collide
+      identity: `${c.rat}-${c.arfcn}-${c.pci ?? '?'}`,
       channel: `${c.rat} ${c.arfcn}`,
       extras: {
         rat: c.rat,

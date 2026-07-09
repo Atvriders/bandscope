@@ -1,52 +1,58 @@
-// App shell: wires the radio registry → per-band rasterization → the WebGL
-// waterfall, and mounts the honesty banner, provenance toggle, frequency-axis
-// legend, and live gauges. UI is intentionally framework-free (small, portable
-// to the Capacitor WebView unchanged).
+// Dashboard shell ("Comm Stack"): all radios visible at once as fixed live
+// readout tiles — no tabs for basic info. Sources emit independently into a
+// SampleStore; a single throttled tick reads one merged snapshot and drives the
+// combined-spectrum strip + every tile with in-place (non-flashing) updates.
 
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { buildRegistry } from '../sources/registry';
 import { Waterfall } from '../render/waterfall';
+import { Canvas2DWaterfall } from '../render/waterfall2d';
+import type { WaterfallLike } from '../render/WaterfallLike';
 import { rasterize } from '../render/rasterize';
-import { DEFAULT_SEGMENTS } from '../core/axis';
-import { type Emission } from '../core/model';
+import { SampleStore } from '../core/SampleStore';
+import type { Emission, RfSample } from '../core/model';
 import { createHonestyBanner } from './HonestyBanner';
-import { Gauge } from './Gauge';
-import { GnssPanel } from './panels/GnssPanel';
-import { WifiPanel } from './panels/WifiPanel';
-import { CellPanel } from './panels/CellPanel';
-import { BlePanel } from './panels/BlePanel';
-import { NfcPanel } from './panels/NfcPanel';
-import { BtPanel } from './panels/BtPanel';
-import { UwbPanel } from './panels/UwbPanel';
-import type { MapPanel } from './panels/MapPanel'; // lazy-loaded (MapLibre is heavy)
+import { el } from './dash/parts';
+import { radioTile, nfcTile, uwbTile, type Tile } from './dash/tiles';
 import { toCsv } from '../export/csv';
 import { SessionRecorder, type Fix } from '../geo/recorder';
 import { PositionProvider } from '../geo/position';
-import type { RfSample } from '../core/model';
+import type { MapPanel } from './panels/MapPanel';
 
 const BINS = 720;
 const ROWS = 256;
+const TICK_MS = 200; // ~5 Hz: one combined strip row + tile refresh per tick
+
+const strongest = (items: RfSample[]): RfSample | null =>
+  items.length ? items.reduce((b, s) => (s.value > b.value ? s : b), items[0]) : null;
+
+const nameOf = (s: RfSample): string => String(s.extras.name || s.identity);
+const mhz = (s: RfSample): string => (s.centerFreqHz ? `${Math.round(s.centerFreqHz / 1e6)} MHz` : '');
+
+function cellMeta(items: RfSample[]): string {
+  if (!items.length) return 'no cells yet';
+  const sv = items.find((s) => s.extras.serving);
+  if (!sv) return `${items.length} cells · ARFCN + power only`;
+  const band = sv.extras.band ? `B${String(sv.extras.band)}` : String(sv.extras.rat ?? '');
+  const f = sv.centerFreqHz ? `${(Math.round(sv.centerFreqHz / 1e5) / 10).toFixed(1)} MHz (computed)` : '';
+  const sinr = sv.snrDb != null ? ` · SINR ${sv.snrDb.toFixed(0)}` : '';
+  return `${band} · ${String(sv.channel ?? '')} · ${f}${sinr}`;
+}
 
 export class App {
-  private wf: Waterfall | null = null;
+  private store = new SampleStore();
+  private wf: WaterfallLike | null = null;
   private canvas!: HTMLCanvasElement;
   private controller = new AbortController();
-  private gauges: Record<'gnss' | 'cell' | 'wifi', Gauge> = {} as never;
-  private gnssPanel = new GnssPanel();
-  private wifiPanel = new WifiPanel();
-  private cellPanel = new CellPanel();
-  private blePanel = new BlePanel();
-  private nfcPanel = new NfcPanel();
-  private btPanel = new BtPanel();
-  private uwbPanel = new UwbPanel();
+  private tiles: Tile[] = [];
+  private lastTick = 0;
+
+  // wardriving map kept as a separate full-screen tool
   private recorder = new SessionRecorder();
   private posProvider = new PositionProvider();
   private mapPanel: MapPanel | null = null;
-  private mapHost = document.createElement('div');
-  private overlay!: HTMLElement;
-  private panelEls: Record<string, HTMLElement> = {};
-  private tabButtons: Record<string, HTMLButtonElement> = {};
-  private lastSamples: RfSample[] = [];
+  private mapPanelPromise: Promise<MapPanel> | null = null;
+  private mapHost = el('div', 'overlay');
   private currentFix: Fix | null = null;
   private mapOpen = false;
   private lastMapRefresh = 0;
@@ -55,127 +61,145 @@ export class App {
     const app = document.getElementById('app')!;
     this.canvas = document.getElementById('waterfall') as HTMLCanvasElement;
 
-    // --- header: brand + provenance toggle ---
-    const header = document.createElement('header');
-    header.className = 'topbar';
-    const brand = document.createElement('div');
-    brand.className = 'brand';
-    brand.textContent = 'BandScope';
-    const btnGroup = document.createElement('div');
-    btnGroup.className = 'btn-group';
-    for (const [key, label] of [
-      ['gnss', 'GNSS'],
-      ['wifi', 'WiFi'],
-      ['cell', 'Cell'],
-      ['ble', 'BLE'],
-      ['nfc', 'NFC'],
-      ['bt', 'BT'],
-      ['uwb', 'UWB'],
-      ['map', 'Map'],
-    ] as const) {
-      const b = document.createElement('button');
-      b.className = 'prov-btn';
-      b.textContent = label;
-      b.onclick = () => this.togglePanel(key);
-      this.tabButtons[key] = b;
-      btnGroup.appendChild(b);
-    }
-    const provBtn = document.createElement('button');
-    provBtn.className = 'prov-btn';
-    provBtn.textContent = 'Show provenance';
+    // --- header ---
+    const header = el('header', 'topbar');
+    header.append(el('div', 'brand', 'BandScope'));
+    const fallbackChip = el('span', 'chip hidden', '2D');
+    const btns = el('div', 'btn-group');
+    const provBtn = el('button', 'prov-btn', 'prov');
     let prov = false;
     provBtn.onclick = () => {
       prov = !prov;
       this.wf?.setProvenance(prov);
       provBtn.classList.toggle('on', prov);
-      provBtn.textContent = prov ? 'Show signal' : 'Show provenance';
     };
-    btnGroup.appendChild(provBtn);
-    const exportBtn = document.createElement('button');
-    exportBtn.className = 'prov-btn';
-    exportBtn.textContent = '⤓ CSV';
-    exportBtn.onclick = () => this.exportCsv();
-    btnGroup.appendChild(exportBtn);
-    header.append(brand, btnGroup);
+    const csvBtn = el('button', 'prov-btn', '⤓ CSV');
+    csvBtn.onclick = () => this.exportCsv();
+    const mapBtn = el('button', 'prov-btn', 'Map');
+    mapBtn.onclick = () => this.openMap();
+    btns.append(fallbackChip, provBtn, csvBtn, mapBtn);
+    header.append(btns);
 
-    // --- honesty banner ---
+    // --- honesty legend ---
     const banner = createHonestyBanner();
 
-    // --- frequency-axis legend (widths match the segmented axis) ---
-    const axis = document.createElement('div');
-    axis.className = 'axis';
-    for (const seg of DEFAULT_SEGMENTS) {
-      const s = document.createElement('span');
-      s.className = 'axis-seg';
-      s.style.flexGrow = String(seg.widthFrac);
-      s.textContent = seg.label;
-      axis.appendChild(s);
-    }
+    // --- combined-spectrum strip (the demoted waterfall) ---
+    const strip = el('div', 'strip');
+    strip.appendChild(this.canvas); // move canvas into the strip
 
-    // --- gauges (only genuine values; RSSI shown as level, not SNR) ---
-    const gaugeRow = document.createElement('div');
-    gaugeRow.className = 'gauges';
-    this.gauges = {
-      gnss: new Gauge({ label: 'Best GNSS C/N0', unit: 'dB-Hz', min: 0, max: 55 }),
-      cell: new Gauge({ label: 'Serving RSRP', unit: 'dBm', min: -140, max: -44 }),
-      wifi: new Gauge({ label: 'Best WiFi RSSI', unit: 'dBm', min: -95, max: -30 }),
-    };
-    gaugeRow.append(this.gauges.gnss.element, this.gauges.cell.element, this.gauges.wifi.element);
+    // --- tile grid ---
+    const grid = el('div', 'grid');
+    this.tiles = this.buildTiles();
+    for (const t of this.tiles) grid.appendChild(t.element);
 
-    // --- detail overlay with tabbed panels (GNSS / WiFi / Cell) ---
-    this.overlay = document.createElement('div');
-    this.overlay.className = 'overlay';
-    const close = document.createElement('button');
-    close.className = 'overlay-close';
-    close.textContent = '✕';
-    close.onclick = () => this.closePanels();
-    this.panelEls = {
-      gnss: this.gnssPanel.element,
-      wifi: this.wifiPanel.element,
-      cell: this.cellPanel.element,
-      ble: this.blePanel.element,
-      nfc: this.nfcPanel.element,
-      bt: this.btPanel.element,
-      uwb: this.uwbPanel.element,
-      map: this.mapHost,
-    };
-    this.overlay.appendChild(close);
-    for (const el of Object.values(this.panelEls)) {
-      el.classList.add('hidden');
-      this.overlay.appendChild(el);
-    }
+    // --- map overlay (lazy) ---
+    const mapClose = el('button', 'overlay-close', '✕');
+    mapClose.onclick = () => this.closeMap();
+    this.mapHost.appendChild(mapClose);
 
-    // assemble around the existing canvas
-    app.insertBefore(header, this.canvas);
-    app.insertBefore(banner, this.canvas);
-    app.insertBefore(axis, this.canvas.nextSibling);
-    app.appendChild(gaugeRow);
-    app.appendChild(this.overlay);
+    app.replaceChildren(header, banner, strip, grid, this.mapHost);
 
-    // --- renderer (resilient: a WebGL failure must NOT kill the data pipeline) ---
+    // --- renderer: GL, falling back to 2D so the strip is never blank ---
     try {
       this.wf = new Waterfall(this.canvas, BINS, ROWS);
-    } catch (err) {
-      console.error('Waterfall/WebGL init failed; continuing without it', err);
+    } catch (glErr) {
+      console.warn('WebGL waterfall unavailable, using 2D fallback', glErr);
+      try {
+        // A canvas that was bound to a (failed) WebGL context can never return a
+        // 2D context — swap in a fresh element before the 2D fallback.
+        const fresh = document.createElement('canvas');
+        fresh.id = this.canvas.id;
+        fresh.className = this.canvas.className;
+        this.canvas.replaceWith(fresh);
+        this.canvas = fresh;
+        this.wf = new Canvas2DWaterfall(this.canvas, BINS, ROWS);
+        fallbackChip.classList.remove('hidden');
+      } catch (err2) {
+        console.error('2D waterfall also failed', err2);
+      }
     }
 
-    // --- sources: on native, request permissions serially first, then stream ---
+    // --- sources (serial permission bootstrap on native) → store ---
     void this.startSources();
 
     const loop = () => {
       if (this.controller.signal.aborted) return;
+      const now = Date.now();
       this.wf?.resize();
+      if (now - this.lastTick >= TICK_MS) {
+        this.lastTick = now;
+        this.tick(now);
+      }
       this.wf?.render();
-      if (this.mapOpen && this.mapPanel) {
-        const now = Date.now();
-        if (now - this.lastMapRefresh > 800) {
-          this.mapPanel.refresh();
-          this.lastMapRefresh = now;
-        }
+      if (this.mapOpen && this.mapPanel && now - this.lastMapRefresh > 800) {
+        this.mapPanel.refresh();
+        this.lastMapRefresh = now;
       }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  }
+
+  private buildTiles(): Tile[] {
+    return [
+      radioTile({
+        id: 'gnss', label: 'GNSS', unit: 'dB-Hz', trust: 'measured', full: true,
+        hero: strongest,
+        meta: (items) =>
+          items.length
+            ? `${items.length} sats · ${items.filter((s) => s.extras.usedInFix).length} in fix · ${[...new Set(items.map((s) => String(s.extras.constellation ?? '')))].filter(Boolean).join(' ')}`
+            : 'acquiring satellites…',
+        rowLabel: (s) => String(s.channel ?? s.identity),
+        rowSub: (s) => `${String(s.extras.constellation ?? '')} ${String(s.extras.band ?? '')}`.trim(),
+        rowSort: (a, b) => b.value - a.value,
+      }),
+      radioTile({
+        id: 'cellular', label: 'CELL', unit: 'dBm', trust: 'derived', full: true,
+        hero: (items) => items.find((s) => s.extras.serving) ?? strongest(items),
+        meta: cellMeta,
+        rowLabel: (s) => `${String(s.extras.rat ?? '')} ${String(s.channel ?? '')}`.trim(),
+        rowSub: (s) => mhz(s),
+        rowSort: (a, b) => (b.extras.serving ? 1 : 0) - (a.extras.serving ? 1 : 0) || b.value - a.value,
+      }),
+      radioTile({
+        id: 'wifi', label: 'WIFI', unit: 'dBm', trust: 'measured', full: true,
+        hero: strongest,
+        meta: (items) => {
+          if (!items.length) return 'scanning…';
+          const t = strongest(items)!;
+          return `${String(t.extras.ssid || '(hidden)')} · ch ${String(t.channel ?? '')} · ${mhz(t)} · ${items.length} APs`;
+        },
+        rowLabel: (s) => String(s.extras.ssid || '(hidden)'),
+        rowSub: (s) => `ch ${String(s.channel ?? '')} · ${mhz(s)}`,
+        rowSort: (a, b) => b.value - a.value,
+      }),
+      radioTile({
+        id: 'ble', label: 'BLE', unit: 'dBm', trust: 'measured', full: false,
+        hero: strongest,
+        meta: (items) => (items.length ? `${items.length} near · 2.4 GHz, no channel` : 'scanning…'),
+        rowLabel: nameOf,
+        rowSub: (s) => s.identity,
+        rowSort: (a, b) => b.value - a.value,
+      }),
+      radioTile({
+        id: 'bt_classic', label: 'BT', unit: 'dBm', trust: 'measured', full: false,
+        hero: strongest,
+        meta: (items) => (items.length ? `${items.length} found · no freq` : 'discovery…'),
+        rowLabel: nameOf,
+        rowSub: (s) => s.identity,
+        rowSort: (a, b) => b.value - a.value,
+      }),
+      nfcTile(),
+      uwbTile(),
+    ];
+  }
+
+  private tick(now: number): void {
+    const snapshot = this.store.snapshot(now);
+    const row = rasterize(snapshot, BINS); // null-freq radios (BLE/BT) contribute nothing
+    this.wf?.pushRow(row.values, row.trust);
+    const ctx = { snapshot, events: this.store.recentEvents(), now };
+    for (const t of this.tiles) t.update(ctx);
   }
 
   private async startSources(): Promise<void> {
@@ -186,19 +210,61 @@ export class App {
     }
   }
 
-  // Request the union of native permissions ONE AT A TIME. Firing all plugins'
-  // requests at once collides — Android shows one dialog at a time and the
-  // losers get auto-denied, which shows up as "no data". Location (Gnss) also
-  // covers WiFi + cellular scans; Bluetooth (Ble) covers BT Classic.
+  // Serial permission requests so the plugins' dialogs don't collide (which
+  // auto-denies the losers and shows as "no data"). Location→phone→bluetooth.
   private async bootstrapPermissions(): Promise<void> {
     for (const name of ['Gnss', 'Cellular', 'Ble']) {
       try {
         const p = registerPlugin(name) as { requestPermissions?: () => Promise<unknown> };
         await p.requestPermissions?.();
       } catch {
-        /* denied / unavailable — that radio's panel will show unavailable */
+        /* denied/unavailable — that tile stays empty */
       }
     }
+  }
+
+  private onEmit(e: Emission): void {
+    this.store.ingest(e, Date.now());
+    if (e.kind === 'markers') this.recorder.addSamples(e.samples, this.currentFix);
+  }
+
+  private exportCsv(): void {
+    const csv = toCsv(this.store.snapshot(Date.now()));
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bandscope-snapshot.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // --- wardriving map (separate full-screen tool) ---
+  private async openMap(): Promise<void> {
+    try {
+      // Memoize the (lazy) build so a double-tap can't create two MapPanels.
+      if (!this.mapPanelPromise) {
+        this.mapPanelPromise = (async () => {
+          const { MapPanel } = await import('./panels/MapPanel');
+          const panel = new MapPanel(this.recorder, (on) => this.setRecording(on));
+          this.mapHost.appendChild(panel.element);
+          this.mapPanel = panel;
+          return panel;
+        })();
+      }
+      const panel = await this.mapPanelPromise;
+      this.mapHost.classList.add('open');
+      this.mapOpen = true;
+      panel.open();
+    } catch (err) {
+      this.mapPanelPromise = null; // allow retry after a failed load
+      console.error('Map failed to open', err);
+    }
+  }
+
+  private closeMap(): void {
+    this.mapHost.classList.remove('open');
+    this.mapOpen = false;
   }
 
   private setRecording(on: boolean): void {
@@ -212,79 +278,6 @@ export class App {
       this.recorder.stop();
       void this.posProvider.stop();
     }
-  }
-
-  private togglePanel(key: string): void {
-    const alreadyOpen = this.overlay.classList.contains('open') && !this.panelEls[key].classList.contains('hidden');
-    if (alreadyOpen) {
-      this.closePanels();
-      return;
-    }
-    this.overlay.classList.add('open');
-    for (const [k, el] of Object.entries(this.panelEls)) {
-      el.classList.toggle('hidden', k !== key);
-      this.tabButtons[k]?.classList.toggle('on', k === key);
-    }
-    if (key === 'uwb') void this.uwbPanel.probe();
-    this.mapOpen = key === 'map';
-    if (this.mapOpen) void this.openMap();
-  }
-
-  /** Lazily import MapLibre + the map panel only when first needed. */
-  private async openMap(): Promise<void> {
-    if (!this.mapPanel) {
-      const { MapPanel } = await import('./panels/MapPanel');
-      this.mapPanel = new MapPanel(this.recorder, (on) => this.setRecording(on));
-      this.mapHost.appendChild(this.mapPanel.element);
-    }
-    this.mapPanel.open();
-  }
-
-  private closePanels(): void {
-    this.overlay.classList.remove('open');
-    for (const b of Object.values(this.tabButtons)) b.classList.remove('on');
-    this.mapOpen = false;
-  }
-
-  private onEmit(e: Emission): void {
-    if (e.kind === 'event') {
-      if (e.radio === 'nfc') this.nfcPanel.addTap(e);
-      return;
-    }
-    if (e.kind !== 'markers') return;
-    this.lastSamples = e.samples;
-    this.recorder.addSamples(e.samples, this.currentFix);
-
-    let bestGnss: number | null = null;
-    let servingRsrp: number | null = null;
-    let bestWifi: number | null = null;
-    for (const s of e.samples) {
-      if (s.source === 'gnss') bestGnss = Math.max(bestGnss ?? -Infinity, s.value);
-      if (s.source === 'cellular' && s.extras.serving) servingRsrp = s.value;
-      if (s.source === 'wifi') bestWifi = Math.max(bestWifi ?? -Infinity, s.value);
-    }
-
-    const row = rasterize(e.samples, BINS);
-    this.wf?.pushRow(row.values, row.trust);
-    this.gauges.gnss.update(bestGnss);
-    this.gauges.cell.update(servingRsrp);
-    this.gauges.wifi.update(bestWifi);
-    this.gnssPanel.update(e.samples);
-    this.wifiPanel.update(e.samples);
-    this.cellPanel.update(e.samples);
-    this.blePanel.update(e.samples);
-    this.btPanel.update(e.samples);
-  }
-
-  private exportCsv(): void {
-    const csv = toCsv(this.lastSamples);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'bandscope-snapshot.csv';
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   stop(): void {

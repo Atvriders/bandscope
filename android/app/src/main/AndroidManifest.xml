@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -39,9 +40,20 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- GNSS raw C/N0 + position (Milestone 2). ACCESS_FINE_LOCATION is
-         required to register the GnssStatus callback. -->
+    <!-- GNSS raw C/N0 + position. ACCESS_FINE_LOCATION is required to register
+         the GnssStatus callback and to read WiFi scan results. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!-- WiFi scanning -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="33" />
+
+    <!-- Cellular serving + neighbor cell info -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 </manifest>

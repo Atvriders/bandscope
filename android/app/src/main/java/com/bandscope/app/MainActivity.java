@@ -11,6 +11,8 @@ public class MainActivity extends BridgeActivity {
         // starts. More radios (WiFi, cellular, UWB, BT Classic) are added here
         // in Milestone 3.
         registerPlugin(GnssPlugin.class);
+        registerPlugin(WifiPlugin.class);
+        registerPlugin(CellularPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

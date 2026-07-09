@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GnssPlugin.class);
         registerPlugin(WifiPlugin.class);
         registerPlugin(CellularPlugin.class);
+        registerPlugin(BlePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

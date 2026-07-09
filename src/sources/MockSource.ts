@@ -50,6 +50,14 @@ const CELLS: CellDesc[] = [
   { earfcn: 2400, pci: 305, base: -102, serving: false }, // band 5 ~869 MHz
 ];
 
+interface BleDesc { addr: string; name: string; base: number; tx: number | null; }
+const BLE_DEVS: BleDesc[] = [
+  { addr: 'C1:22:33:44:55:01', name: 'Fitness Band', base: -58, tx: -12 },
+  { addr: 'D2:33:44:55:66:02', name: 'Earbuds', base: -71, tx: -20 },
+  { addr: 'E3:44:55:66:77:03', name: '', base: -83, tx: null },
+  { addr: 'F4:55:66:77:88:04', name: 'SmartTag', base: -66, tx: -8 },
+];
+
 export class MockSource implements RadioSource {
   readonly id = 'gnss' as const; // representative id; emits multiple radios
   private rnd: () => number;
@@ -133,6 +141,23 @@ export class MockSource implements RadioSource {
         identity: `LTE-${c.pci}`,
         channel: `EARFCN ${c.earfcn}`,
         extras: { pci: c.pci, serving: c.serving, rat: 'LTE' },
+      });
+    }
+
+    for (const b of BLE_DEVS) {
+      samples.push({
+        source: 'ble',
+        tsMs: nowMs,
+        measuredAtMs: nowMs,
+        centerFreqHz: null, // BLE has no frequency
+        bandwidthHz: null,
+        value: b.base + jitter(5),
+        unit: Unit.DBM,
+        snrDb: null,
+        trustClass: TrustClass.MEASURED,
+        identity: b.addr,
+        channel: null,
+        extras: { name: b.name, txPower: b.tx },
       });
     }
 

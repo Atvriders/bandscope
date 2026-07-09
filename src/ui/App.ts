@@ -14,6 +14,7 @@ import { Gauge } from './Gauge';
 import { GnssPanel } from './panels/GnssPanel';
 import { WifiPanel } from './panels/WifiPanel';
 import { CellPanel } from './panels/CellPanel';
+import { BlePanel } from './panels/BlePanel';
 
 const BINS = 720;
 const ROWS = 256;
@@ -26,6 +27,7 @@ export class App {
   private gnssPanel = new GnssPanel();
   private wifiPanel = new WifiPanel();
   private cellPanel = new CellPanel();
+  private blePanel = new BlePanel();
   private overlay!: HTMLElement;
   private panelEls: Record<string, HTMLElement> = {};
   private tabButtons: Record<string, HTMLButtonElement> = {};
@@ -46,6 +48,7 @@ export class App {
       ['gnss', 'GNSS'],
       ['wifi', 'WiFi'],
       ['cell', 'Cell'],
+      ['ble', 'BLE'],
     ] as const) {
       const b = document.createElement('button');
       b.className = 'prov-btn';
@@ -102,6 +105,7 @@ export class App {
       gnss: this.gnssPanel.element,
       wifi: this.wifiPanel.element,
       cell: this.cellPanel.element,
+      ble: this.blePanel.element,
     };
     this.overlay.appendChild(close);
     for (const el of Object.values(this.panelEls)) {
@@ -169,6 +173,7 @@ export class App {
     this.gnssPanel.update(e.samples);
     this.wifiPanel.update(e.samples);
     this.cellPanel.update(e.samples);
+    this.blePanel.update(e.samples);
   }
 
   stop(): void {

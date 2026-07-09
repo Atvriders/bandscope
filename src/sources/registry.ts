@@ -8,6 +8,7 @@ import { MockSource } from './MockSource';
 import { GnssNativeSource } from './native/GnssNativeSource';
 import { WifiNativeSource } from './native/WifiNativeSource';
 import { CellularNativeSource } from './native/CellularNativeSource';
+import { BleNativeSource } from './native/BleNativeSource';
 
 export interface RegistryOptions {
   /** True inside the Capacitor Android APK (Capacitor.isNativePlatform()). */
@@ -23,13 +24,14 @@ export function buildRegistry(opts: RegistryOptions = {}): RadioSource[] {
     return [new MockSource()];
   }
 
-  // Native tier: real radios. GNSS + WiFi + cellular today; BLE/NFC/UWB/
+  // Native tier: real radios. GNSS + WiFi + cellular + BLE today; NFC/UWB/
   // BT-Classic follow. (No MockSource on native — we show only what the
   // hardware actually reports.)
   const sources: RadioSource[] = [
     new GnssNativeSource(),
     new WifiNativeSource(),
     new CellularNativeSource(),
+    new BleNativeSource(),
   ];
   return sources;
 }

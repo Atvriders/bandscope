@@ -133,9 +133,59 @@ body {
   background: var(--categorical);
 }
 
-/* --- combined-spectrum strip (demoted waterfall) --- */
+/* --- live frequency scope (spectrum: low freq left → high freq right) --- */
+.scope {
+  height: 104px;
+  flex: 0 0 auto;
+  background: #000;
+}
+.scope-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* --- shared frequency axis (labels the scope AND the waterfall below) --- */
+.freq-axis {
+  display: flex;
+  height: 28px;
+  flex: 0 0 auto;
+  background: #0b0f15;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.freq-seg {
+  flex-grow: 1;
+  flex-basis: 0;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.freq-seg:last-child {
+  border-right: none;
+}
+.freq-name {
+  font-size: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.freq-hz {
+  font-size: 8px;
+  color: var(--measured);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- waterfall history strip (demoted waterfall) --- */
 .strip {
-  height: 76px;
+  height: 60px;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--line);
   background: #000;

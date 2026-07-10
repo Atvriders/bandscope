@@ -14,6 +14,7 @@ import type { Emission, RfSample } from '../core/model';
 import { createHonestyBanner } from './HonestyBanner';
 import { el } from './dash/parts';
 import { radioTile, nfcTile, uwbTile, type Tile } from './dash/tiles';
+import { SpectrumScope, createFreqAxis } from './dash/scope';
 import { DetailSheet, DETAIL_CONFIGS } from './dash/detail';
 import type { RadioId } from '../core/model';
 import { toCsv } from '../export/csv';
@@ -49,6 +50,7 @@ export class App {
   private lastTick = 0;
   private sheet!: DetailSheet;
   private detailOpen = false;
+  private scope = new SpectrumScope();
 
   // wardriving map kept as a separate full-screen tool
   private recorder = new SessionRecorder();
@@ -86,7 +88,10 @@ export class App {
     // --- honesty legend ---
     const banner = createHonestyBanner();
 
-    // --- combined-spectrum strip (the demoted waterfall) ---
+    // --- live frequency scope + shared axis (low freq left → high freq right) ---
+    const freqAxis = createFreqAxis();
+
+    // --- waterfall history strip below the scope, same axis ---
     const strip = el('div', 'strip');
     strip.appendChild(this.canvas); // move canvas into the strip
 
@@ -103,7 +108,16 @@ export class App {
     // --- per-radio detail sheet (tap a tile's footer to open) ---
     this.sheet = new DetailSheet(() => this.closeOverlay());
 
-    app.replaceChildren(header, banner, strip, grid, this.mapHost, this.sheet.element);
+    app.replaceChildren(
+      header,
+      banner,
+      this.scope.element,
+      freqAxis,
+      strip,
+      grid,
+      this.mapHost,
+      this.sheet.element,
+    );
 
     // hardware/gesture back closes an open overlay instead of leaving the app
     window.addEventListener('popstate', () => this.onPopState());
@@ -135,6 +149,7 @@ export class App {
       if (this.controller.signal.aborted) return;
       const now = Date.now();
       this.wf?.resize();
+      this.scope.resize();
       if (now - this.lastTick >= TICK_MS) {
         this.lastTick = now;
         this.tick(now);
@@ -193,6 +208,7 @@ export class App {
     const snapshot = this.store.snapshot(now);
     const row = rasterize(snapshot, BINS); // null-freq radios (BLE/BT) contribute nothing
     this.wf?.pushRow(row.values, row.trust);
+    this.scope.update(snapshot);
     const ctx = { snapshot, events: this.store.recentEvents(), now };
     for (const t of this.tiles) t.update(ctx);
     if (this.detailOpen) this.sheet.update(ctx);
